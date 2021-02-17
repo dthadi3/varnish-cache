@@ -32,10 +32,41 @@ jobs:
           else
             make -j16 check VERBOSE=1
           fi
+    - &test-linux
+      stage: test
+      os: linux
+      dist: bionic
+      arch: ppc64le
+      compiler: clang
+      addons:
+        apt:
+          packages:
+            - nghttp2
+            - python3-docutils
+            - python3-sphinx
+            - libunwind-dev
+            - libpcre3-dev
+      before_script:
+        - ./autogen.sh
+        - ./configure --enable-maintainer-mode --with-unwind
+      script: &script-common
+        - |
+          if [[ "$TRAVIS_PULL_REQUEST" != "false" ]]; then
+            make -j12 distcheck VERBOSE=1
+          else
+            make -j16 check VERBOSE=1
+          fi
     - <<: *test-linux
       arch: arm64
     - <<: *test-linux
       compiler: gcc
+      arch: amd64
+      before_script:
+        - ./autogen.sh
+        - ./configure --enable-maintainer-mode
+    - <<: *test-linux
+      compiler: gcc
+      arch: ppc64le
       before_script:
         - ./autogen.sh
         - ./configure --enable-maintainer-mode
@@ -48,8 +79,40 @@ jobs:
     - <<: *test-linux
       env: WITNESS=1
       script: make -j16 witness VERBOSE=1
+      arch: amd64
+    - <<: *test-linux
+      env: WITNESS=1
+      script: make -j16 witness VERBOSE=1
+      arch: ppc64le
     - <<: *test-linux
       stage: sanitizers
+      arch: amd64
+      addons:
+        apt:
+          sources:
+            - sourceline: 'deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main'
+              key_url: https://apt.llvm.org/llvm-snapshot.gpg.key
+            - ubuntu-toolchain-r-test
+          packages:
+            - clang-9
+            - libunwind-dev
+            - llvm-9
+            - nghttp2
+            - python3-docutils
+            - python3-sphinx
+      env: ASAN=1 UBSAN=1
+      before_script:
+        - |
+          export ASAN_OPTIONS=abort_on_error=1,detect_odr_violation=1,detect_leaks=1,detect_stack_use_after_return=1,detect_invalid_pointer_pairs=1,handle_segv=0,handle_sigbus=0,use_sigaltstack=0,disable_coredump=0
+          export LSAN_OPTIONS=abort_on_error=1,use_sigaltstack=0,suppressions=$(pwd)/tools/lsan.suppr
+          export TSAN_OPTIONS=abort_on_error=1,halt_on_error=1,use_sigaltstack=0,suppressions=$(pwd)/tools/tsan.suppr
+          export UBSAN_OPTIONS=halt_on_error=1,print_stacktrace=1,use_sigaltstack=0,suppressions=$(pwd)/tools/ubsan.suppr
+          export CC=clang-9
+        - ./autogen.sh
+        - ./configure --enable-maintainer-mode --with-unwind --enable-developer-warnings --enable-debugging-symbols --disable-stack-protector --with-persistent-storage --enable-asan --enable-ubsan
+    - <<: *test-linux
+      stage: sanitizers
+      arch: ppc64le
       addons:
         apt:
           sources:
@@ -111,6 +174,7 @@ jobs:
             --form description="$TRAVIS_BRANCH"
             --insecure
             'https://scan.coverity.com/builds?project=varnish'
+    
 
 stages:
   - name: test
@@ -129,4 +193,3 @@ notifications:
       - "irc.linpro.no#varnish-hacking"
     on_success: change
     use_notice: true
-
